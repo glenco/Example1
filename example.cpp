@@ -32,11 +32,11 @@ int main(int arg,char **argv){
   
   //****************************************
   // **** random number seed, not actually used in this example, but
-  // ***** needed for lens constuctor
+  // ***** needed for lens constructor
   //****************************************
   long seed = -1827675;
 
-  //**** set the comology  ******
+  //**** set the cosmology  ******
   COSMOLOGY cosmo(Planck);
   
   // construct some massive objects call "halos"
@@ -96,7 +96,7 @@ int main(int arg,char **argv){
 
   }
   /****************************
-   Here a Grid is constucted which, unlike GridMap can be refined for finding images, etc.
+   Here a Grid is constructed which, unlike GridMap can be refined for finding images, etc.
    ****************************/
   
   std::cout << "Constructing initial Grid ..." << std::endl;
@@ -106,7 +106,7 @@ int main(int arg,char **argv){
   /*
    There we make same maps of the lensing quantities.
    This could be done with GridMap since no refinement has been done yet.
-   The "!" infront of the file name causes it to overwrite a file with that name.  Suffixes are added (eg .kappa.fits).
+   The "!" in front of the file name causes it to overwrite a file with that name.  Suffixes are added (e.g. .kappa.fits).
    */
   
   grid.writeFits(2,KAPPA,"!initgrid");
@@ -140,7 +140,7 @@ int main(int arg,char **argv){
   if(Ncrit > 0){
     Point_2d p1,p2;
     
-    // find a box on the image plane that cantains all of the critical curves
+    // find a box on the image plane that contains all of the critical curves
     for(int ii = 0;ii< Ncrit;++ii){
       critcurves[ii].CritRange(p1,p2);
  
@@ -150,8 +150,6 @@ int main(int arg,char **argv){
       Yrange[0] = MIN(Yrange[0],p1[1]);
       Yrange[1] = MAX(Yrange[1],p2[1]);
     }
-    
-    //double maprange = 1.5*MAX(Xrange[1]-Xrange[0],Yrange[1]-Yrange[0]);
     
     // make a PixelMap which is used for IO of images
     PixelMap map(center,2*grid.getInitNgrid(),grid.getInitRange()/grid.getInitNgrid()/2);
@@ -245,8 +243,7 @@ int main(int arg,char **argv){
   std::vector<ImageInfo> imageinfo;
   int Nimages;
   Point_2d p1,p2;
-  critcurves[i].CritRange(p1,p2);  // this is to make ithe image fit the critical curve
-  PosType crit_range = 1.5*(p1-p2).length();
+  critcurves[i].CritRange(p1,p2);  // this is to make the image fit the critical curve
   PixelMap mapI(critcurves[i].critical_center.x,512*2,range/512/2);
   
   std::cout << "Mapping source ..." << std::endl;
