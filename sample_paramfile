@@ -10,6 +10,8 @@ field_off               1           # # # turn off field halos
 hubble                  0.73        # # # Hubble constant H/100
 lensing_off             0           # # # switches all lensing off
 main_halo_on            0
-pixelmaps_input_file    map.fits
+#pixelmaps_input_file    test.Sigma.fits
+pixelmaps_input_file    Z000p271.fits
 pixelmaps_on            1
+pixelmaps_zeromean      false
 z_source                3.62        # # # source redshift

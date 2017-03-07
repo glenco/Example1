@@ -7,6 +7,10 @@
 #include "grid_maintenance.h"
 #include "gridmap.h"
 
+//std::ostream &operator<<(std::ostream &os, Point_2d const &p) {
+// return os << p.x[0] << " " << p.x[1];
+// }
+ 
 
 int main(int arg,char **argv){
 
@@ -23,23 +27,53 @@ int main(int arg,char **argv){
   std::cout << "using parameter file: " << paramfile << std::endl;
   
   // read parameter file
-  InputParams params(paramfile);
+  //InputParams params(paramfile);
 
-  long seed = -1827674;
+  
+  //****************************************
+  // **** random number seed, not actually used in this example, but
+  // ***** needed for lens constuctor
+  //****************************************
+  long seed = -1827675;
 
-  /********************
-   construct lens:
-   mass maps will be read in during this construction
-   *******************/
-  Lens lens(params,&seed);
+  //**** set the comology  ******
+  COSMOLOGY cosmo(Planck);
+  
+  // construct some massive objects call "halos"
+  
+  
+  // an NFW halo - mass,Rmax,redshift,concentration,axis ratio
+  //               ,position angle,number of stars
+  LensHaloNFW halo_nfw(1.0e12,1.0,0.3,4,1,0,0);
+  halo_nfw.setTheta(0,0); // set angular position
+  // a NonSingular Isothermal Ellipsoid - mass,redshift,sigma
+  // , core radius,axis ratio,position angle,number of stars
+  LensHaloRealNSIE halo_nsie(5.0e11,0.3, 200, 0, 0.5, 0, 0);
+  halo_nsie.setTheta(0,0);
+
+  // construct lens
+  Lens lens(&seed,2.0,cosmo);
+  
+  // insert object into the lens
+  lens.insertMainHalo(&halo_nfw,true);
+  lens.insertMainHalo(&halo_nsie,true);
+  
   std::cout << "Lens constructed" << std::endl;
   
+  /*******************************
+  
+   Now that we
+   
+  ********************************/
   //double center[] = {0.3*pi/180,-0.25*pi/180};
   double center[] = {0,0};  // center of grids
-  double range = 0.3*pi/180; // range of grids in radians
-  size_t Ninit = 1024; // the initial number of pixels to a side in the grid
+  //double range = 0.3*pi/180/20/2; // range of grids in radians
+  double range = 15*arcsecTOradians; // range of grids in radians
+  size_t Ninit = 1024/2/2; // the initial number of pixels to a side in the grid
   
-  /** 
+  
+  std::cout << " range = " << range/degreesTOradians << " degrees" << std::endl;
+  /**
    Here a uniform grid is constructed that is not capable 
    of refinement for images, caustics, etc.  This is the 
    simplest way to make a map.
@@ -62,11 +96,11 @@ int main(int arg,char **argv){
 
   }
   /****************************
-   Here a Grid is constucted which can be refined for finding images, etc.
+   Here a Grid is constucted which, unlike GridMap can be refined for finding images, etc.
    ****************************/
   
   std::cout << "Constructing initial Grid ..." << std::endl;
-  Grid grid(&lens,Ninit,center,range);
+  Grid grid(&lens,Ninit,center,range/2);
   std::cout << "constructed" << std::endl;
   
   /*
@@ -74,10 +108,14 @@ int main(int arg,char **argv){
    This could be done with GridMap since no refinement has been done yet.
    The "!" infront of the file name causes it to overwrite a file with that name.  Suffixes are added (eg .kappa.fits).
    */
-  grid.writeFits(center,grid.getInitNgrid(), grid.getInitRange()/grid.getInitNgrid() ,KAPPA,"!initgrid");
-  grid.writeFits(center,grid.getInitNgrid(), grid.getInitRange()/grid.getInitNgrid() ,ALPHA,"!initgrid");
-  grid.writeFits(center,grid.getInitNgrid(), grid.getInitRange()/grid.getInitNgrid() ,GAMMA,"!initgrid");
   
+  grid.writeFits(2,KAPPA,"!initgrid");
+  grid.writeFits(2,ALPHA,"!initgrid");
+  grid.writeFits(2,GAMMA,"!initgrid");
+  grid.writeFits(2,INVMAG,"!initgrid");
+  
+  PixelMap map = grid.writePixelMap(center,grid.getInitNgrid(), grid.getInitRange()/grid.getInitNgrid() ,ALPHA);
+
   /******************************************
    Now we are going to look for same caustics
    ******************************************/
@@ -86,15 +124,19 @@ int main(int arg,char **argv){
   std::vector<ImageFinding::CriticalCurve> critcurves(100);
   int Ncrit;  // number of caustics
   // resolution to which the critical curves should be refined (radians)
-  PosType resolution = 0.05*pi/180/60/60;
+  PosType resolution = 0.1*arcsecTOradians;
   
   std::cout << "Looking for critical curves ..." << std::endl;
   // Find all the critical curves
-  ImageFinding::find_crit(&lens,&grid,critcurves, &Ncrit,resolution);
+  ImageFinding::find_crit(&lens,&grid,critcurves, &Ncrit,resolution,0.0,true);
   std::cout << Ncrit << " critical curves found." << std::endl;
 
   PosType Xrange[2]={0,0},Yrange[2]={0,0};
-  
+  PosType rmax,rmin,rave;
+  for(auto it : critcurves){
+    it.CriticalRadius(rmax,rmin,rave);
+    std::cout << it.type << " " << it.critical_area << " " << it.caustic_area << std::endl;;
+  }
   if(Ncrit > 0){
     Point_2d p1,p2;
     
@@ -109,52 +151,60 @@ int main(int arg,char **argv){
       Yrange[1] = MAX(Yrange[1],p2[1]);
     }
     
+    //double maprange = 1.5*MAX(Xrange[1]-Xrange[0],Yrange[1]-Yrange[0]);
+    
     // make a PixelMap which is used for IO of images
-    PixelMap map(center
-                 ,(size_t)(MAX(Xrange[1]-Xrange[0],Yrange[1]-Yrange[0])/resolution/3)
-                 ,resolution*3);
+    PixelMap map(center,2*grid.getInitNgrid(),grid.getInitRange()/grid.getInitNgrid()/2);
     
     // this draws the critical curves on the image
     for(int ii = 0;ii< Ncrit;++ii){
       map.AddCurve(critcurves[ii].critical_curve,ii+1);
+      map.AddCurve(critcurves[ii].caustic_curve_intersecting,ii+1);
     }
+
+    // print an image of the caustic
+    map.printFITS("!caustics_crit.fits");
     
     /**************************
      Now we are going to pick a caustic, put a source 
      in it and find its images
      **************************/
-    int nc=0;  // pick a caustic
-    // draw it on the image
-    map.AddCurve(critcurves[nc].caustic_curve_outline,2);
-
-    std::vector<Point_2d> ys;
+  
+    std::vector<Point_2d> ys;  // source positions
     // this is a random number generator
     Utilities::RandomNumbers_NR rng(seed);
     
     // This finds random points within this caustic.
     // In this case it is just one point.
+    int nc=0;  // pick a caustic
+    for (int i=1 ; i < critcurves.size() ; ++i) {
+      if(critcurves[nc].critical_area > critcurves[i].critical_area) nc = i;
+    }
     critcurves[nc].RandomSourceWithinCaustic(1,ys,rng);
 
     // ImageInfo is a class that contains information about images
-    std::vector<ImageInfo> imageinfo(100);
+    std::vector<ImageInfo> imageinfo;
     int Nimages;  // number of images that will be found
     size_t Nimagepoints;  // total number of points within the images
     
-    // this finds the images made by a source at ys[0] and stores
+    // This finds the images made by a source at ys[0] and stores
     // information about them in imageinfo.
-    // These are just circular sources.
-    //  More realistic sources can be mapped by construction a source
-    //  and using ImageFinding::map_imagesISOP().
-    ImageFinding::find_images_kist(&lens,ys[0].x,1.1*pi/180/60/60
+    // These are just circular sources with constant surface brightness
+    ImageFinding::find_images_kist(&lens,ys[0].x,0.05*arcsecTOradians
                     ,&grid,&Nimages,imageinfo,&Nimagepoints,
                             0, true, 2);
     
     std::cout << "Number of images: " << Nimages << std::endl;
-    // add images to the PixelMap
-    map.AddImages(imageinfo.data(),Nimages,-1);
     
-    // ooutput the PixelMap as a fits file
-    map.printFITS("!test.fits");
+    // print an image of the caustic
+    map.printFITS("!test.caustics.fits");
+    
+    map.Clean();
+    // add images to the PixelMap
+    map.AddImages(imageinfo.data(),Nimages,0);
+    
+    // output the PixelMap as a fits file
+    map.printFITS("!test.image.fits");
   }
   
   // If the grid is now output at twice the original resolution
@@ -163,8 +213,61 @@ int main(int arg,char **argv){
   grid.writeFits(center,2*grid.getInitNgrid(),grid.getInitRange()/grid.getInitNgrid()/2, KAPPA,"!initgrid_refined");
   
   
+  //*************************************************************
+  //**** Let put a a more complicated source in the image
+  //****************************************
+  
+  // select the largest area tangential critical curve
+  int i=0;
+  for (int ii=1 ; ii < critcurves.size() ; ++ii) {
+    if(critcurves[ii].critical_area > critcurves[i].critical_area) i = ii;
+  }
+
+  //while(critcurves[i].type != tangential) ++i;
+
+  //*** find a source position within the tangential caustic
+  Utilities::RandomNumbers_NR random(seed);   //*** random number generator
+  std::vector<Point_2d> y;                    //*** vector for source positions
+  critcurves[i].RandomSourceWithinCaustic(1,y,random); //*** get random points within first caustic
+  
+  critcurves[i].CriticalRadius(rmax,rmin,rave);
+  std::cout << " critical curve radius: " << rmax/arcsecTOradians << " , " << rmin/arcsecTOradians
+  << " , " << rave/arcsecTOradians << std::endl;
+  
+  PosType zs = 2; //** redshift of source
+  //** make a Sersic source, there are a number of other ones that could be used
+  SourceSersic source(23,0.1,0,1,0.5,zs,y[0].x);
+  
+  /** reset the source plane in the lens from the one given in the
+   parameter file to this source's redshift
+   */
+  lens.ResetSourcePlane(zs,false);
+  std::vector<ImageInfo> imageinfo;
+  int Nimages;
+  Point_2d p1,p2;
+  critcurves[i].CritRange(p1,p2);  // this is to make ithe image fit the critical curve
+  PosType crit_range = 1.5*(p1-p2).length();
+  PixelMap mapI(critcurves[i].critical_center.x,512*2,range/512/2);
+  
+  std::cout << "Mapping source ..." << std::endl;
+  
+  /*** there are two different ways to map the images
+   ImageFinding::map_images() will adapt the grid to make the image smooth
+   ImageFinding::map_images_fixedgrid() will use the grid as is without further ray shooting
+   */
+  ImageFinding::map_images(&lens,&source,&grid,&Nimages,imageinfo,source.getRadius()
+                           ,source.getRadius()/100,0,EachImage,false,true);
+  
+  //ImageFinding::map_images_fixedgrid(&source,&grid,&Nimages,imageinfo
+  //,source.getRadius(),true,true);
+  
+  //*** add sources images to the plot.
+  mapI.AddImages(imageinfo,Nimages);
+  mapI.printFITS("!image.fits");
+
   /*************************************************************
-   Many other things are possible and easily done with GLAMER.  
-   Read the documantation for a more complete sicription of functionality.
+   Many other things are possible and easily done with GLAMER.
+   Read the documentation for a more complete description of functionality.
    *************************************************************/
+
  }
