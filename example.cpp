@@ -18,14 +18,14 @@ int main(int arg,char **argv){
    set parameter file name:
    A default name is used or a name is taken as a command line argument
    *********************/
-
+/*
   std::string paramfile;
   std::cout << "initializing model" << std::endl;
   //string paramfile;
   if(arg > 1) paramfile.assign(argv[1],strlen(argv[1]));
   else paramfile = "sample_paramfile";
   std::cout << "using parameter file: " << paramfile << std::endl;
-  
+  */
   // read parameter file
   //InputParams params(paramfile);
 
@@ -55,8 +55,8 @@ int main(int arg,char **argv){
   Lens lens(&seed,2.0,cosmo);
   
   // insert object into the lens
-  lens.insertMainHalo(&halo_nfw,true);
-  lens.insertMainHalo(&halo_nsie,true);
+  lens.insertMainHalo(halo_nfw,true);
+  lens.insertMainHalo(halo_nsie,true);
   
   std::cout << "Lens constructed" << std::endl;
   
