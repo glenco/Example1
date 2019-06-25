@@ -44,11 +44,13 @@ int main(int arg,char **argv){
   
   // an NFW halo - mass,Rmax,redshift,concentration,axis ratio
   //               ,position angle,number of stars
-  LensHaloNFW halo_nfw(1.0e12,1.0,0.3,4,1,0,0);
+  
+  double z_lens = 0.3; // redshift of lens
+  LensHaloNFW halo_nfw(1.0e13,1.0,z_lens,4,1,0,0);
   halo_nfw.setTheta(0,0); // set angular position
   // a NonSingular Isothermal Ellipsoid - mass,redshift,sigma
   // , core radius,axis ratio,position angle,number of stars
-  LensHaloRealNSIE halo_nsie(5.0e11,0.3, 200, 0, 0.5, 0, 0);
+  LensHaloRealNSIE halo_nsie(8.0e11,z_lens, 300, 0, 0.5, 0, 0);
   halo_nsie.setTheta(0,0);
 
   // construct lens
@@ -234,7 +236,7 @@ int main(int arg,char **argv){
   
   PosType zs = 2; //** redshift of source
   //** make a Sersic source, there are a number of other ones that could be used
-  SourceSersic source(23,0.1,0,1,0.5,zs,y[0].x);
+  SourceSersic source(22,0.1,0,1,0.5,zs,y[0].x);
   
   /** reset the source plane in the lens from the one given in the
    parameter file to this source's redshift
@@ -244,8 +246,14 @@ int main(int arg,char **argv){
   int Nimages;
   Point_2d p1,p2;
   critcurves[i].CritRange(p1,p2);  // this is to make the image fit the critical curve
-  PixelMap mapI(critcurves[i].critical_center.x,512*2,range/512/2);
-  
+
+
+  // get information on observational / telescope parameters
+
+  Observation ob(KiDS_i,100, 100);     // KiDS-like observation
+ 
+  // high res image
+  PixelMap mapI(critcurves[i].critical_center.x,200,ob.getPixelSize()/3);
   std::cout << "Mapping source ..." << std::endl;
   
   /*** there are two different ways to map the images
@@ -260,8 +268,26 @@ int main(int arg,char **argv){
   
   //*** add sources images to the plot.
   mapI.AddImages(imageinfo,Nimages);
-  mapI.printFITS("!image.fits");
+  mapI.printFITS("!image.fits");  // output image without psf and noise
 
+  
+  // new map with resolution of observation
+  PixelMap mapII(critcurves[i].critical_center.x,100,ob.getPixelSize());
+  
+   // copy other image in taking into account the different sized pixels
+  mapII.copy_in(mapI);
+
+  // now add a unlensed source as the lens galaxy
+  SourceSersic lens_galaxy(22,0.2,45*degreesTOradians,4,0.5,z_lens);
+  
+  mapII.AddSource(lens_galaxy);  // add source to image
+  
+  ob.Convert(mapII,true, true, &seed);  // apply psf and noise
+  
+  mapII.printFITS("!image_withnoise.fits");
+
+ 
+  
   /*************************************************************
    Many other things are possible and easily done with GLAMER.
    Read the documentation for a more complete description of functionality.
