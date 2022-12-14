@@ -37,7 +37,8 @@ int main(int arg,char **argv){
   long seed = -1827675;
 
   //**** set the cosmology  ******
-  COSMOLOGY cosmo(Planck);
+  COSMOLOGY cosmo(CosmoParamSet::Planck18);
+
   
   // construct some massive objects call "halos"
   
@@ -46,11 +47,12 @@ int main(int arg,char **argv){
   //               ,position angle,number of stars
   
   double z_lens = 0.3; // redshift of lens
-  LensHaloNFW halo_nfw(1.0e13,1.0,z_lens,4,1,0,0);
+  //LensHaloNFW halo_nfw(1.0e13,1.0,z_lens,4,1,0,0);
+  LensHaloNFW halo_nfw(1.0e13,1.0,z_lens,4,1,0,cosmo);
   halo_nfw.setTheta(0,0); // set angular position
   // a NonSingular Isothermal Ellipsoid - mass,redshift,sigma
   // , core radius,axis ratio,position angle,number of stars
-  LensHaloRealNSIE halo_nsie(8.0e11,z_lens, 300, 0, 0.5, 0, 0);
+  LensHaloRealNSIE halo_nsie(8.0e11,z_lens, 300, 0, 0.5, 0, cosmo);
   halo_nsie.setTheta(0,0);
 
   // construct lens
@@ -94,7 +96,7 @@ int main(int arg,char **argv){
      in this case they are set to match.
      ****/
     gridmap.writeFitsUniform(center,gridmap.getInitNgrid()
-                           ,gridmap.getInitNgrid(),KAPPA,"!gridmap");
+                           ,gridmap.getInitNgrid(),LensingVariable::KAPPA,"!gridmap");
 
   }
   /****************************
@@ -111,12 +113,12 @@ int main(int arg,char **argv){
    The "!" in front of the file name causes it to overwrite a file with that name.  Suffixes are added (e.g. .kappa.fits).
    */
   
-  grid.writeFits(2,KAPPA,"!initgrid");
-  grid.writeFits(2,ALPHA,"!initgrid");
-  grid.writeFits(2,GAMMA,"!initgrid");
-  grid.writeFits(2,INVMAG,"!initgrid");
+  grid.writeFits(2,LensingVariable::KAPPA,"!initgrid");
+  grid.writeFits(2,LensingVariable::ALPHA,"!initgrid");
+  grid.writeFits(2,LensingVariable::GAMMA,"!initgrid");
+  grid.writeFits(2,LensingVariable::INVMAG,"!initgrid");
   
-  PixelMap map = grid.writePixelMap(center,grid.getInitNgrid(), grid.getInitRange()/grid.getInitNgrid() ,ALPHA);
+  PixelMap map = grid.writePixelMap(center,grid.getInitNgrid(), grid.getInitRange()/grid.getInitNgrid() ,LensingVariable::ALPHA);
 
   /******************************************
    Now we are going to look for same caustics
@@ -137,7 +139,7 @@ int main(int arg,char **argv){
   PosType rmax,rmin,rave;
   for(auto it : critcurves){
     it.CriticalRadius(rmax,rmin,rave);
-    std::cout << it.type << " " << it.critical_area << " " << it.caustic_area << std::endl;;
+    std::cout << (int)(it.type) << " " << it.critical_area << " " << it.caustic_area << std::endl;;
   }
   if(Ncrit > 0){
     Point_2d p1,p2;
@@ -158,7 +160,7 @@ int main(int arg,char **argv){
     
     // this draws the critical curves on the image
     for(int ii = 0;ii< Ncrit;++ii){
-      map.AddCurve(critcurves[ii].critical_curve,ii+1);
+      map.AddCurve(critcurves[ii].critcurve,ii+1);
       map.AddCurve(critcurves[ii].caustic_curve_intersecting,ii+1);
     }
 
@@ -209,8 +211,8 @@ int main(int arg,char **argv){
   
   // If the grid is now output at twice the original resolution
   // some additional structure might be see because of the refinement
-  grid.writeFits(center,2*grid.getInitNgrid(),grid.getInitRange()/grid.getInitNgrid()/2, INVMAG,"!initgrid_refined");
-  grid.writeFits(center,2*grid.getInitNgrid(),grid.getInitRange()/grid.getInitNgrid()/2, KAPPA,"!initgrid_refined");
+  grid.writeFits(center,2*grid.getInitNgrid(),grid.getInitRange()/grid.getInitNgrid()/2, LensingVariable::INVMAG,"!initgrid_refined");
+  grid.writeFits(center,2*grid.getInitNgrid(),grid.getInitRange()/grid.getInitNgrid()/2, LensingVariable::KAPPA,"!initgrid_refined");
   
   
   //*************************************************************
@@ -236,7 +238,8 @@ int main(int arg,char **argv){
   
   PosType zs = 2; //** redshift of source
   //** make a Sersic source, there are a number of other ones that could be used
-  SourceSersic source(22,0.1,0,1,0.5,zs,y[0].x);
+  SourceSersic source(22,0.1,0,1,0.5,zs);
+  source.setTheta(y[0].x);
   
   /** reset the source plane in the lens from the one given in the
    parameter file to this source's redshift
@@ -250,7 +253,7 @@ int main(int arg,char **argv){
 
   // get information on observational / telescope parameters
 
-  Observation ob(KiDS_i,100, 100);     // KiDS-like observation
+  Observation ob(Telescope::KiDS_i,100, 100);     // KiDS-like observation
  
   // high res image
   PixelMap mapI(critcurves[i].critical_center.x,200,ob.getPixelSize()/3);
@@ -261,7 +264,7 @@ int main(int arg,char **argv){
    ImageFinding::map_images_fixedgrid() will use the grid as is without further ray shooting
    */
   ImageFinding::map_images(&lens,&source,&grid,&Nimages,imageinfo,source.getRadius()
-                           ,source.getRadius()/100,0,EachImage,false,true);
+                           ,source.getRadius()/100,0,ExitCriterion::EachImage,false,true);
   
   //ImageFinding::map_images_fixedgrid(&source,&grid,&Nimages,imageinfo
   //,source.getRadius(),true,true);
@@ -282,8 +285,10 @@ int main(int arg,char **argv){
   
   mapII.AddSource(lens_galaxy);  // add source to image
   
-  ob.Convert(mapII,true, true, &seed);  // apply psf and noise
+  Utilities::RandomNumbers_NR ran(seed);
   
+  ob.Convert(mapII,true, true, ran);  // apply psf and noise
+
   mapII.printFITS("!image_withnoise.fits");
 
  
