@@ -35,6 +35,7 @@ int main(int arg,char **argv){
   // ***** needed for lens constructor
   //****************************************
   long seed = -1827675;
+  double zeropoint = 45.0;  // arbitrary example
 
   //**** set the cosmology  ******
   COSMOLOGY cosmo(CosmoParamSet::Planck18);
@@ -238,7 +239,7 @@ int main(int arg,char **argv){
   
   PosType zs = 2; //** redshift of source
   //** make a Sersic source, there are a number of other ones that could be used
-  SourceSersic source(22,0.1,0,1,0.5,zs);
+  SourceSersic source(22,0.1,0,1,0.5,zs,zeropoint);
   source.setTheta(y[0].x);
   
   /** reset the source plane in the lens from the one given in the
@@ -253,7 +254,7 @@ int main(int arg,char **argv){
 
   // get information on observational / telescope parameters
 
-  Observation ob(Telescope::KiDS_i,100, 100);     // KiDS-like observation
+  Observation ob(Telescope::Euclid_VIS,100, 100);     // Euclid_VIS-like observation
  
   // high res image
   PixelMap mapI(critcurves[i].critical_center.x,200,ob.getPixelSize()/3);
@@ -281,15 +282,16 @@ int main(int arg,char **argv){
   mapII.copy_in(mapI);
 
   // now add a unlensed source as the lens galaxy
-  SourceSersic lens_galaxy(22,0.2,45*degreesTOradians,4,0.5,z_lens);
+  SourceSersic lens_galaxy(22,0.2,45*degreesTOradians,4,0.5,z_lens,zeropoint);
   
   mapII.AddSource(lens_galaxy);  // add source to image
   
   Utilities::RandomNumbers_NR ran(seed);
   
-  ob.Convert(mapII,true, true, ran);  // apply psf and noise
+  PixelMap map_out,error_map;
+  ob.Convert(mapII,map_out,error_map,true, true, ran);  // apply psf and noise
 
-  mapII.printFITS("!image_withnoise.fits");
+  map_out.printFITS("!image_withnoise.fits");
 
  
   
