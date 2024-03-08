@@ -14,21 +14,6 @@
 
 int main(int arg,char **argv){
 
-  /********************
-   set parameter file name:
-   A default name is used or a name is taken as a command line argument
-   *********************/
-/*
-  std::string paramfile;
-  std::cout << "initializing model" << std::endl;
-  //string paramfile;
-  if(arg > 1) paramfile.assign(argv[1],strlen(argv[1]));
-  else paramfile = "sample_paramfile";
-  std::cout << "using parameter file: " << paramfile << std::endl;
-  */
-  // read parameter file
-  //InputParams params(paramfile);
-
   
   //****************************************
   // **** random number seed, not actually used in this example, but
@@ -42,32 +27,33 @@ int main(int arg,char **argv){
 
   
   // construct some massive objects call "halos"
-  
-  
   // an NFW halo - mass,Rmax,redshift,concentration,axis ratio
   //               ,position angle,number of stars
   
   double z_lens = 0.3; // redshift of lens
+  double z_source = 3; // redshift of source
+  
   //LensHaloNFW halo_nfw(1.0e13,1.0,z_lens,4,1,0,0);
-  LensHaloNFW halo_nfw(1.0e13,1.0,z_lens,4,1,0,cosmo);
-  halo_nfw.setTheta(0,0); // set angular position
-  // a NonSingular Isothermal Ellipsoid - mass,redshift,sigma
+  //LensHaloNFW halo_nfw(1.0e13,1.0,z_lens,4,1,0,cosmo);
+  //halo_nfw.setTheta(0,0); // set angular position
+  // Truncated NonSingular Isothermal Ellipsoid - mass,redshift,sigma
   // , core radius,axis ratio,position angle,number of stars
-  LensHaloRealNSIE halo_nsie(8.0e11,z_lens, 300, 0, 0.5, 0, cosmo);
+  LensHaloTNSIE halo_nsie(1.0e13,z_lens, 300, 0, 0.5, 45, cosmo);
   halo_nsie.setTheta(0,0);
 
   // construct lens
-  Lens lens(&seed,2.0,cosmo);
+  Lens lens(&seed,z_source,cosmo);
   
-  // insert object into the lens
-  lens.insertMainHalo(halo_nfw,true);
+  // insert the LensHalos into the lens
+  //lens.insertMainHalo(halo_nfw,true);
   lens.insertMainHalo(halo_nsie,true);
   
   std::cout << "Lens constructed" << std::endl;
   
+  
   /*******************************
   
-   Now that we
+   Now that we have created a Lens we can shoot rays through it
    
   ********************************/
   //double center[] = {0.3*pi/180,-0.25*pi/180};
@@ -86,7 +72,7 @@ int main(int arg,char **argv){
    in parallel if the N_THREAD is set to multiple threads 
    in the GLAMER build.
   **/
-  {
+  
     std::cout << "Constructing initial GridMap ..." << std::endl;
     GridMap gridmap(&lens,Ninit,center,range);
     std::cout << "constructed" << std::endl;
@@ -96,59 +82,37 @@ int main(int arg,char **argv){
      The center,range and pixel numbers do not have to match the grid, but 
      in this case they are set to match.
      ****/
-    gridmap.writeFitsUniform(center,gridmap.getInitNgrid()
-                           ,gridmap.getInitNgrid(),LensingVariable::KAPPA,"!gridmap");
+    gridmap.writeFitsUniform(LensingVariable::KAPPA,"!kappa_map.fits");
+    gridmap.writeFitsUniform(LensingVariable::INVMAG,"!invers_magnification_map.fits");
 
-  }
-  /****************************
-   Here a Grid is constructed which, unlike GridMap can be refined for finding images, etc.
-   ****************************/
-  
-  std::cout << "Constructing initial Grid ..." << std::endl;
-  Grid grid(&lens,Ninit,center,range/2);
-  std::cout << "constructed" << std::endl;
-  
-  /*
-   There we make same maps of the lensing quantities.
-   This could be done with GridMap since no refinement has been done yet.
-   The "!" in front of the file name causes it to overwrite a file with that name.  Suffixes are added (e.g. .kappa.fits).
-   */
-  
-  grid.writeFits(2,LensingVariable::KAPPA,"!initgrid");
-  grid.writeFits(2,LensingVariable::ALPHA,"!initgrid");
-  grid.writeFits(2,LensingVariable::GAMMA,"!initgrid");
-  grid.writeFits(2,LensingVariable::INVMAG,"!initgrid");
-  
-  PixelMap map = grid.writePixelMap(center,grid.getInitNgrid(), grid.getInitRange()/grid.getInitNgrid() ,LensingVariable::ALPHA);
 
   /******************************************
    Now we are going to look for same caustics
    ******************************************/
 
   // The CriticalCurve class contains information about a caustic
-  std::vector<ImageFinding::CriticalCurve> critcurves(100);
-  int Ncrit;  // number of caustics
-  // resolution to which the critical curves should be refined (radians)
-  PosType resolution = 0.1*arcsecTOradians;
+  std::vector<ImageFinding::CriticalCurve> critcurves;
   
   std::cout << "Looking for critical curves ..." << std::endl;
   // Find all the critical curves
-  ImageFinding::find_crit(&lens,&grid,critcurves, &Ncrit,resolution,0.0,true);
-  std::cout << Ncrit << " critical curves found." << std::endl;
+  ImageFinding::find_crit(lens,gridmap,critcurves);
+  std::cout << critcurves.size() << " critical curves found." << std::endl;
 
   PosType Xrange[2]={0,0},Yrange[2]={0,0};
   PosType rmax,rmin,rave;
-  for(auto it : critcurves){
-    it.CriticalRadius(rmax,rmin,rave);
-    std::cout << (int)(it.type) << " " << it.critical_area << " " << it.caustic_area << std::endl;;
+  for(auto crit : critcurves){
+    crit.CriticalRadius(rmax,rmin,rave);
+    std::cout << (int)(crit.type) << " " << crit.critical_area << " " << crit.caustic_area << std::endl;;
   }
-  if(Ncrit > 0){
+  if(critcurves.size() == 0){
+    std::cout << "No critical curves where found. Construct another lens." << std::endl;
+  }else{
     Point_2d p1,p2;
     
     // find a box on the image plane that contains all of the critical curves
-    for(int ii = 0;ii< Ncrit;++ii){
-      critcurves[ii].CritRange(p1,p2);
- 
+    for(auto crit : critcurves){
+      crit.CritRange(p1,p2);
+      
       Xrange[0] = MIN(Xrange[0],p1[0]);
       Xrange[1] = MAX(Xrange[1],p2[0]);
       
@@ -156,148 +120,125 @@ int main(int arg,char **argv){
       Yrange[1] = MAX(Yrange[1],p2[1]);
     }
     
-    // make a PixelMap which is used for IO of images
-    PixelMap map(center,2*grid.getInitNgrid(),grid.getInitRange()/grid.getInitNgrid()/2);
+    //***************************************
+    // This part makes a fits image of the caustics and critical curves.
+    // It is crude.  A better way to make a nice plot is to print the points
+    // in the curve to a file and plot them with some other program.
+    //***************************************
     
-    // this draws the critical curves on the image
-    for(int ii = 0;ii< Ncrit;++ii){
-      map.AddCurve(critcurves[ii].critcurve,ii+1);
-      map.AddCurve(critcurves[ii].caustic_curve_intersecting,ii+1);
+    // print critical curves and caustics to a csv file
+    {
+      std::ofstream caustics("caustics_and_crits.csv");
+      int i=0;
+      caustics << "# id - caustic number" << std::endl;
+      caustics << "# type - type of caustic, radial,tangential,psudo" << std::endl;
+      caustics << "# crit_x - x coordinate of point on critical curve (radians)" << std::endl;
+      caustics << "# crit_y - y coordinate of point on critical curve (radians)" << std::endl;
+      caustics << "# caust_x - x coordinate of point on caustic curve (radians)" << std::endl;
+      caustics << "# caust_y - y coordinate of point on caustic curve (radians)" << std::endl;
+      caustics << "id,type,crit_x,crit_y,caust_x,caust_y" << std::endl;
+      for(ImageFinding::CriticalCurve &crit : critcurves){
+        for(RAY &p : crit.critcurve){
+          caustics << i << ",";
+          caustics << crit.type << ",";
+          caustics << p.x[0] << ",";
+          caustics << p.x[1] << ",";
+          caustics << p.y[0] << ",";
+          caustics << p.y[1] << std::endl;
+        }
+        ++i;
+      }
     }
-
-    // print an image of the caustic
-    map.printFITS("!caustics_crit.fits");
+    // *****************************************
+    //  RAYs can also be shot individually or in groups in parallel through the lens.
+    // They contain source in image position along with the local magnification matrix.
+    // *****************************************
     
-    /**************************
-     Now we are going to pick a caustic, put a source 
-     in it and find its images
-     **************************/
-  
+    //**************************
+    // Now we are going to pick a caustic, put a source
+    // in it and find its images
+    //**************************
+    
     std::vector<Point_2d> ys;  // source positions
     // this is a random number generator
     Utilities::RandomNumbers_NR rng(seed);
     
     // This finds random points within this caustic.
     // In this case it is just one point.
-    int nc=0;  // pick a caustic
+    int nc=0;  // pick the caustic with largest critical curve
     for (int i=1 ; i < critcurves.size() ; ++i) {
       if(critcurves[nc].critical_area > critcurves[i].critical_area) nc = i;
     }
-    critcurves[nc].RandomSourceWithinCaustic(1,ys,rng);
-
+    critcurves[nc].RandomSourceWithinCaustic(1,ys,rng); // 1 random point within caustic
+    
     // ImageInfo is a class that contains information about images
     std::vector<ImageInfo> imageinfo;
     int Nimages;  // number of images that will be found
     size_t Nimagepoints;  // total number of points within the images
     
-    // This finds the images made by a source at ys[0] and stores
-    // information about them in imageinfo.
-    // These are just circular sources with constant surface brightness
-    ImageFinding::find_images_kist(&lens,ys[0].x,0.05*arcsecTOradians
-                    ,&grid,&Nimages,imageinfo,&Nimagepoints,
-                            0, true, 2);
+    std::vector<Point_2d> image_points;
+    {
+      std::vector<GridMap::Triangle> trs;
+      gridmap.find_images(ys[0],image_points, trs);
+    }
+    std::cout << "Number of images: " << image_points.size() << std::endl;
     
-    std::cout << "Number of images: " << Nimages << std::endl;
+    //******************************************************
+    // This is a different way of finding images without going through a GridMap
+    // It can find the images positions to whatever resolition is required.
+    // In this case 1/5th the resolution of the GridMap.
+    //******************************************************
     
-    // print an image of the caustic
-    map.printFITS("!test.caustics.fits");
+    std::vector<RAY> rays = lens.find_images(ys[0], z_source, gridmap.getCenter(), gridmap.getXRange(), gridmap.getResolution()/5);
     
-    map.Clean();
-    // add images to the PixelMap
-    map.AddImages(imageinfo.data(),Nimages,0);
+    for(RAY ray : rays){
+      std::cout << ray << std::endl;
+    }
     
-    // output the PixelMap as a fits file
-    map.printFITS("!test.image.fits");
+    //*************************************************************
+    //**** Let us put a more complicated source in the image
+    //*************************************************************
+    
+    
+    //*** find a source position within the tangential caustic
+    Utilities::RandomNumbers_NR random(seed);   //*** random number generator
+    std::vector<Point_2d> y;                    //*** vector for source positions
+    critcurves[nc].RandomSourceWithinCaustic(2,y,random); // get random points within first caustic
+    
+    critcurves[nc].CriticalRadius(rmax,rmin,rave);
+    std::cout << " critical curve radius: " << rmax/arcsecTOradians << " , " << rmin/arcsecTOradians
+    << " , " << rave/arcsecTOradians << std::endl;
+    
+    //** make a Sersic source, there are a number of other ones that could be used
+    SourceSersic source(22,0.1,0,1,0.5,z_source,zeropoint);
+    source.setTheta(y[0].x);
+    
+    // adds the source image to the gridmap
+    // The source redshift was fixed when the gridmap was made from the Lens.
+    //  To change it use lens.ResetSourcePlane(zs) and remake the GridMap object.
+    gridmap.AddSurfaceBrightnesses(&source);
+    
+    gridmap.writeFits(LensingVariable::SurfBrightness,"!surface_brightness.fits");
+    
+    // you can also make a Pixel map
+    PixelMap pmap = gridmap.writePixelMap(LensingVariable::SurfBrightness);
+    
+    { // add another source
+      SourceSersic source2(22,0.1,0,1,0.5,z_source,zeropoint);
+      source2.setTheta(y[1].x);
+      
+      lens.ResetSourcePlane(5); // change redshift of source plane
+      GridMap gridmap2(&lens,Ninit,center,range);
+      
+      gridmap2.AddSurfaceBrightnesses(&source2);
+      pmap.AddGridMapBrightness(gridmap2);
+    }
+
+    pmap.printFITS("!surface_brightness2.fits");
+   
+    /*************************************************************
+     Many other things are possible and easily done with GLAMER.
+     Read the documentation for a more complete description of functionality.
+     *************************************************************/
   }
-  
-  // If the grid is now output at twice the original resolution
-  // some additional structure might be see because of the refinement
-  grid.writeFits(center,2*grid.getInitNgrid(),grid.getInitRange()/grid.getInitNgrid()/2, LensingVariable::INVMAG,"!initgrid_refined");
-  grid.writeFits(center,2*grid.getInitNgrid(),grid.getInitRange()/grid.getInitNgrid()/2, LensingVariable::KAPPA,"!initgrid_refined");
-  
-  
-  //*************************************************************
-  //**** Let put a a more complicated source in the image
-  //****************************************
-  
-  // select the largest area tangential critical curve
-  int i=0;
-  for (int ii=1 ; ii < critcurves.size() ; ++ii) {
-    if(critcurves[ii].critical_area > critcurves[i].critical_area) i = ii;
-  }
-
-  //while(critcurves[i].type != tangential) ++i;
-
-  //*** find a source position within the tangential caustic
-  Utilities::RandomNumbers_NR random(seed);   //*** random number generator
-  std::vector<Point_2d> y;                    //*** vector for source positions
-  critcurves[i].RandomSourceWithinCaustic(1,y,random); //*** get random points within first caustic
-  
-  critcurves[i].CriticalRadius(rmax,rmin,rave);
-  std::cout << " critical curve radius: " << rmax/arcsecTOradians << " , " << rmin/arcsecTOradians
-  << " , " << rave/arcsecTOradians << std::endl;
-  
-  PosType zs = 2; //** redshift of source
-  //** make a Sersic source, there are a number of other ones that could be used
-  SourceSersic source(22,0.1,0,1,0.5,zs,zeropoint);
-  source.setTheta(y[0].x);
-  
-  /** reset the source plane in the lens from the one given in the
-   parameter file to this source's redshift
-   */
-  lens.ResetSourcePlane(zs,false);
-  std::vector<ImageInfo> imageinfo;
-  int Nimages;
-  Point_2d p1,p2;
-  critcurves[i].CritRange(p1,p2);  // this is to make the image fit the critical curve
-
-
-  // get information on observational / telescope parameters
-
-  Observation ob(Telescope::Euclid_VIS,100, 100);     // Euclid_VIS-like observation
- 
-  // high res image
-  PixelMap mapI(critcurves[i].critical_center.x,200,ob.getPixelSize()/3);
-  std::cout << "Mapping source ..." << std::endl;
-  
-  /*** there are two different ways to map the images
-   ImageFinding::map_images() will adapt the grid to make the image smooth
-   ImageFinding::map_images_fixedgrid() will use the grid as is without further ray shooting
-   */
-  ImageFinding::map_images(&lens,&source,&grid,&Nimages,imageinfo,source.getRadius()
-                           ,source.getRadius()/100,0,ExitCriterion::EachImage,false,true);
-  
-  //ImageFinding::map_images_fixedgrid(&source,&grid,&Nimages,imageinfo
-  //,source.getRadius(),true,true);
-  
-  //*** add sources images to the plot.
-  mapI.AddImages(imageinfo,Nimages);
-  mapI.printFITS("!image.fits");  // output image without psf and noise
-
-  
-  // new map with resolution of observation
-  PixelMap mapII(critcurves[i].critical_center.x,100,ob.getPixelSize());
-  
-   // copy other image in taking into account the different sized pixels
-  mapII.copy_in(mapI);
-
-  // now add a unlensed source as the lens galaxy
-  SourceSersic lens_galaxy(22,0.2,45*degreesTOradians,4,0.5,z_lens,zeropoint);
-  
-  mapII.AddSource(lens_galaxy);  // add source to image
-  
-  Utilities::RandomNumbers_NR ran(seed);
-  
-  PixelMap map_out,error_map;
-  ob.Convert(mapII,map_out,error_map,true, true, ran);  // apply psf and noise
-
-  map_out.printFITS("!image_withnoise.fits");
-
- 
-  
-  /*************************************************************
-   Many other things are possible and easily done with GLAMER.
-   Read the documentation for a more complete description of functionality.
-   *************************************************************/
-
  }
